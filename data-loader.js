@@ -339,9 +339,9 @@ function renderHikeList() {
 
 /* ── Map ──────────────────────────────────────────────────── */
 async function loadNigeriaBoundaries() {
-  const res = await fetch("./public/data/nigeria_states.geojson");
+  const res = await fetch("./nigeria_states.geojson");
   if (res.ok) return res.json();
-  const r2  = await fetch("./public/data/gadm41_NGA_shp.zip");
+  const r2  = await fetch("./gadm41_NGA_shp.zip");
   if (!r2.ok || typeof shp !== "function") throw new Error("Unable to load Nigeria boundaries");
   const geo    = await shp(await r2.arrayBuffer());
   const layers = Array.isArray(geo) ? geo : [geo];
@@ -1306,7 +1306,7 @@ function _pdfLogoSrc() {
 
 async function loadPdfLogo() {
   try {
-    const resp = await fetch("./public/geoinfotech-logo.gif");
+    const resp = await fetch("./geoinfotech-logo.gif");
     if (!resp.ok) return;
     const blob = await resp.blob();
     _pdfLogoBase64 = await new Promise((res) => {
@@ -1929,7 +1929,7 @@ async function initDashboard() {
   }
 
   try {
-    const sr = await fetch("./public/data/nigeria_fuel_stations.json");
+    const sr = await fetch("./nigeria_fuel_stations.json");
     if (sr.ok) {
       const d = await sr.json();
       fuelStations = d.stations || [];
