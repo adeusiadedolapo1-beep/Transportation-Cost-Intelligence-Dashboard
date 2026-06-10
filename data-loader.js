@@ -501,67 +501,183 @@ function renderFuelStations() {
   stationLayer.addTo(nigeriaMap);
 }
 
-/* ── Nigeria major highways via Overpass API ──────────────── */
+/* ── Nigeria major highways — auto-loads with localStorage cache ── */
+const HW_CACHE_KEY = "ng_hw_v2";
+const HW_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; /* 7 days */
+
+function buildHighwayLayer(features) {
+  const hwStyle = {
+    motorway: { color: "#b0a492", weight: 1.8, opacity: 0.9 },
+    trunk:    { color: "#a09480", weight: 1.3, opacity: 0.85 },
+    primary:  { color: "#8c8070", weight: 0.9, opacity: 0.8 },
+  };
+  const hwLabel = { motorway: "Motorway", trunk: "Trunk Road", primary: "Primary Road" };
+
+  highwayLayer = L.geoJSON({ type: "FeatureCollection", features }, {
+    style: (f) => hwStyle[f.properties.highway] || { color: "#a09480", weight: 0.9, opacity: 0.75 },
+    onEachFeature: (f, layer) => {
+      const p = f.properties;
+      layer.bindTooltip(p.name || p.ref || hwLabel[p.highway] || "Road",
+        { sticky: true, className: "map-tooltip" });
+
+      layer.on("click", () => {
+        const oway = p.oneway === "yes" ? "Yes" : p.oneway === "-1" ? "Yes (reverse)" : "No";
+        const roadTitle = p.name || p.ref || hwLabel[p.highway] || "Road";
+        const vals = {
+          "hap-name":     p.name     || "—",
+          "hap-type":     hwLabel[p.highway] || p.highway || "—",
+          "hap-ref":      p.ref      || "—",
+          "hap-lanes":    p.lanes    || "—",
+          "hap-surface":  p.surface  || "—",
+          "hap-maxspeed": p.maxspeed ? p.maxspeed + " km/h" : "—",
+          "hap-oneway":   oway,
+        };
+        Object.entries(vals).forEach(([id, val]) => { const el=$(id); if(el) el.textContent=val; });
+
+        const hint  = $("hw-attr-hint");
+        const table = $("hw-attr-table");
+        if (hint)  hint.style.display  = "none";
+        if (table) table.style.display = "";
+
+        /* Ensure attribute panel is open */
+        const panel = $("hw-attr-panel");
+        const attrBtn = $("hw-attr-btn");
+        if (panel) panel.style.display = "block";
+        if (attrBtn) attrBtn.classList.add("hw-attr-btn-open");
+
+        layer.bindPopup(
+          `<div class="hw-attr-popup">
+             <div class="hw-attr-title">${roadTitle}</div>
+             <table class="hw-attr-table">
+               ${Object.entries(vals).map(([,v],i)=>{
+                 const k=["Name","Type","Ref / No.","Lanes","Surface","Max Speed","One Way"][i];
+                 return `<tr><td class="hw-attr-key">${k}</td><td class="hw-attr-val">${v}</td></tr>`;
+               }).join("")}
+             </table>
+           </div>`,
+          { maxWidth: 230, className: "hw-attr-popup-wrap" }
+        ).openPopup();
+      });
+    },
+  }).addTo(nigeriaMap);
+
+  /* Roads sit above state fill polygons; stations stay on top of roads */
+  highwayLayer.bringToFront();
+  if (stationLayer) stationLayer.bringToFront();
+}
+
 async function loadNigeriaHighways() {
   if (!nigeriaMap || highwaysLoaded) return;
   highwaysLoaded = true;
 
+  const status = $("hw-load-status");
+
+  function finishLoad(features) {
+    buildHighwayLayer(features);
+    if (status) status.textContent = `${features.length} road segments loaded`;
+  }
+
+  /* ── 1. Local GeoJSON file (instant — bundled with app) ── */
+  try {
+    const resp = await fetch("./public/data/nigeria_highways.geojson");
+    if (resp.ok) {
+      const gj = await resp.json();
+      const features = Array.isArray(gj.features) ? gj.features : [];
+      if (features.length > 0) { finishLoad(features); return; }
+    }
+  } catch (_) {}
+
+  /* ── 2. localStorage cache (instant if previously fetched) ── */
+  let features = null;
+  try {
+    const raw = localStorage.getItem(HW_CACHE_KEY);
+    if (raw) {
+      const { ts, f } = JSON.parse(raw);
+      if (Date.now() - ts < HW_CACHE_TTL) features = f;
+    }
+  } catch (_) {}
+
+  if (features) { finishLoad(features); return; }
+
+  /* ── 3. Overpass API fallback (first visit, no local file) ── */
+  if (status) status.textContent = "Loading roads…";
+
   const query = `[out:json][timeout:90];
-area["ISO3166-1"="NG"][admin_level=2]->.a;
-(way["highway"~"^(motorway|trunk|primary)$"](area.a););
+area(3600192787)->.a;
+(
+  way["highway"~"^(motorway|trunk|primary)$"](area.a);
+);
 out geom;`;
 
-  const url = "https://overpass-api.de/api/interpreter";
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      body: "data=" + encodeURIComponent(query),
-    });
-    if (!resp.ok) throw new Error("Overpass request failed");
-    const data = await resp.json();
+  const endpoints = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+  ];
 
-    const features = data.elements
-      .filter((el) => el.type === "way" && el.geometry)
-      .map((el) => ({
-        type: "Feature",
-        properties: { highway: el.tags?.highway, name: el.tags?.name || "" },
-        geometry: {
-          type: "LineString",
-          coordinates: el.geometry.map((pt) => [pt.lon, pt.lat]),
-        },
-      }));
-
-    const hwColors = { motorway: "#e8b400", trunk: "#e07020", primary: "#c04040" };
-
-    highwayLayer = L.geoJSON({ type: "FeatureCollection", features }, {
-      style: (f) => {
-        const hw = f.properties.highway;
-        return { color: hwColors[hw] || "#cc6600", weight: hw === "motorway" ? 2.5 : hw === "trunk" ? 2 : 1.5, opacity: 0.85 };
-      },
-      onEachFeature: (f, layer) => {
-        if (f.properties.name) layer.bindTooltip(f.properties.name, { sticky: true, className: "map-tooltip" });
-      },
-    }).addTo(nigeriaMap);
-
-    if (stateLayer) stateLayer.bringToFront();
-    if (stationLayer) stationLayer.bringToFront();
-
-    const chk = $("settings-highways-chk");
-    if (chk) chk.checked = true;
-  } catch (err) {
-    console.warn("Highways failed to load:", err);
-    highwaysLoaded = false;
-    const chk = $("settings-highways-chk");
-    if (chk) { chk.disabled = true; chk.parentElement.title = "Failed to load — try again later"; }
+  let data = null;
+  for (const url of endpoints) {
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      data = await resp.json();
+      break;
+    } catch (e) {
+      console.warn("Overpass endpoint failed:", url, e.message);
+    }
   }
+
+  if (!data || !data.elements) {
+    highwaysLoaded = false;
+    if (status) status.textContent = "Failed to load roads";
+    return;
+  }
+
+  features = data.elements
+    .filter((el) => el.type === "way" && el.geometry)
+    .map((el) => ({
+      type: "Feature",
+      properties: {
+        highway:  el.tags?.highway  || "",
+        name:     el.tags?.name     || "",
+        ref:      el.tags?.ref      || "",
+        lanes:    el.tags?.lanes    || "",
+        surface:  el.tags?.surface  || "",
+        maxspeed: el.tags?.maxspeed || "",
+        oneway:   el.tags?.oneway   || "",
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: el.geometry.map((pt) => [pt.lon, pt.lat]),
+      },
+    }));
+
+  try {
+    localStorage.setItem(HW_CACHE_KEY, JSON.stringify({ ts: Date.now(), f: features }));
+  } catch (_) {}
+
+  finishLoad(features);
 }
 
 function toggleHighways(show) {
   if (!nigeriaMap) return;
-  if (show && !highwaysLoaded) { loadNigeriaHighways(); return; }
+  /* Loading hasn't finished yet or previously failed — try again */
+  if (show && !highwayLayer) { if (!highwaysLoaded) loadNigeriaHighways(); return; }
   if (!highwayLayer) return;
-  if (show) highwayLayer.addTo(nigeriaMap);
-  else highwayLayer.remove();
+  if (show) {
+    highwayLayer.addTo(nigeriaMap);
+    highwayLayer.bringToFront();
+    if (stationLayer) stationLayer.bringToFront();
+  } else {
+    highwayLayer.remove();
+    const hint  = $("hw-attr-hint");
+    const table = $("hw-attr-table");
+    if (hint)  { hint.textContent = "Enable Major Highways first, then click any road on the map."; hint.style.display = ""; }
+    if (table) table.style.display = "none";
+  }
 }
 
 /* SVG fallback map */
@@ -2035,9 +2151,19 @@ function initSettingsPanel() {
     basemapSel.addEventListener("change", () => switchBasemap(basemapSel.value));
   }
 
-  const hwChk = $("settings-highways-chk");
-  if (hwChk) {
-    hwChk.addEventListener("change", () => toggleHighways(hwChk.checked));
+  /* Attributes button — toggles the attribute panel open/closed */
+  const attrBtn = $("hw-attr-btn");
+  const attrPanel = $("hw-attr-panel");
+  if (attrBtn && attrPanel) {
+    /* Start open */
+    attrPanel.style.display = "block";
+    attrBtn.classList.add("hw-attr-btn-open");
+
+    attrBtn.addEventListener("click", () => {
+      const isOpen = attrPanel.style.display !== "none";
+      attrPanel.style.display = isOpen ? "none" : "block";
+      attrBtn.classList.toggle("hw-attr-btn-open", !isOpen);
+    });
   }
 }
 
@@ -2060,12 +2186,26 @@ function initReportsNav() {
   navReports.addEventListener("click", (e) => {
     e.preventDefault();
     showRightView("reports");
+    /* Pre-populate with the current active state if nothing selected yet */
+    const sel = $("report-state-sel");
+    if (sel && !sel.value && activeState) {
+      sel.value = activeState;
+      try { renderReportStateDetail(activeState); } catch (_) {}
+    }
   });
 
   /* State select in reports */
   const sel = $("report-state-sel");
   sel?.addEventListener("change", (e) => {
-    if (e.target.value) renderReportStateDetail(e.target.value);
+    const state = e.target.value;
+    if (!state) return;
+    try {
+      renderReportStateDetail(state);
+      const detail = $("report-detail");
+      if (detail) detail.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      console.error("Report render error:", err);
+    }
   });
 }
 
@@ -2255,6 +2395,7 @@ async function initDashboard() {
   try {
     const geo = await loadNigeriaBoundaries();
     renderMap(geo);
+    loadNigeriaHighways(); /* auto-start in background — instant if cached */
   } catch (err) {
     console.error("Nigeria map failed to load.", err);
     const mapEl = $("nigeria-map");

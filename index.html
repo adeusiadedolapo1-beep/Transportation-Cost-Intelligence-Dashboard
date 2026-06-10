@@ -501,13 +501,29 @@
             </div>
             <div class="settings-toggle-row" style="margin-top:10px">
               <div class="str-info">
-                <span class="str-label">Major Highways</span>
-                <span class="str-desc">Load Nigeria roads from Overpass API</span>
+                <div class="hw-label-row">
+                  <span class="str-label">Major Highways</span>
+                  <button id="hw-attr-btn" class="hw-attr-btn" type="button" title="Show / hide road attributes">
+                    Attributes
+                    <svg class="hw-attr-btn-caret" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                  </button>
+                </div>
+                <span class="str-desc" id="hw-load-status">Load Nigeria roads from Overpass API</span>
               </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="settings-highways-chk">
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              </label>
+            </div>
+
+            <!-- Road attribute panel — always present, toggled by the Attributes button -->
+            <div id="hw-attr-panel" class="hw-attr-panel">
+              <p class="hw-attr-hint" id="hw-attr-hint">Click any road on the map to view its attributes.</p>
+              <table class="hw-attr-table-side" id="hw-attr-table" style="display:none;">
+                <tr><td class="hat-k">Name</td><td class="hat-v" id="hap-name">—</td></tr>
+                <tr><td class="hat-k">Type</td><td class="hat-v" id="hap-type">—</td></tr>
+                <tr><td class="hat-k">Ref / No.</td><td class="hat-v" id="hap-ref">—</td></tr>
+                <tr><td class="hat-k">Lanes</td><td class="hat-v" id="hap-lanes">—</td></tr>
+                <tr><td class="hat-k">Surface</td><td class="hat-v" id="hap-surface">—</td></tr>
+                <tr><td class="hat-k">Max Speed</td><td class="hat-v" id="hap-maxspeed">—</td></tr>
+                <tr><td class="hat-k">One Way</td><td class="hat-v" id="hap-oneway">—</td></tr>
+              </table>
             </div>
           </div>
 

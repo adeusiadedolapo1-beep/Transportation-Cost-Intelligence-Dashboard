@@ -629,6 +629,94 @@ svg { display: block; }
   border-color: rgba(80,120,200,.3) !important;
 }
 
+/* ── Highway attribute popup ─────────────────────────────── */
+.hw-attr-popup-wrap .leaflet-popup-content-wrapper {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  padding: 0;
+}
+.hw-attr-popup-wrap .leaflet-popup-content { margin: 10px 12px; }
+.hw-attr-popup-wrap .leaflet-popup-tip { background: var(--panel); }
+.hw-attr-popup-wrap .leaflet-popup-close-button {
+  color: var(--muted) !important;
+  font-size: 18px;
+  right: 6px;
+  top: 5px;
+}
+.hw-attr-popup-wrap .leaflet-popup-close-button:hover { color: var(--text) !important; }
+
+.hw-attr-title {
+  font-weight: 700;
+  font-size: 11.5px;
+  color: var(--text);
+  margin-bottom: 7px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.hw-attr-table { width: 100%; font-size: 10.5px; border-collapse: collapse; }
+.hw-attr-table tr { border-bottom: 1px solid rgba(100,140,200,.08); }
+.hw-attr-table tr:last-child { border-bottom: none; }
+.hw-attr-key { color: var(--muted); padding: 3px 8px 3px 0; width: 46%; vertical-align: top; }
+.hw-attr-val { color: var(--text); padding: 3px 0; font-weight: 500; }
+
+[data-theme="light"] .hw-attr-popup-wrap .leaflet-popup-content-wrapper {
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+}
+
+/* ── Highway label row (label + Attributes button on same line) */
+.hw-label-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.hw-attr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px 2px 6px;
+  cursor: pointer;
+  letter-spacing: .03em;
+  transition: background .15s, color .15s;
+}
+.hw-attr-btn:hover { background: rgba(255,255,255,.12); color: var(--text); }
+.hw-attr-btn.hw-attr-btn-open { background: rgba(0,229,255,.1); color: var(--blue); border-color: var(--blue); }
+.hw-attr-btn-caret {
+  width: 8px; height: 5px;
+  transition: transform .18s;
+}
+.hw-attr-btn.hw-attr-btn-open .hw-attr-btn-caret { transform: rotate(180deg); }
+
+/* ── Highway attribute side panel (Settings) ─────────────── */
+.hw-attr-panel {
+  margin-top: 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 11px 10px;
+  background: rgba(255,255,255,.03);
+}
+.hw-attr-hint { font-size: 10.5px; color: var(--muted); margin: 0; line-height: 1.5; }
+.hw-attr-table-side { width: 100%; font-size: 10.5px; border-collapse: collapse; margin-top: 2px; }
+.hw-attr-table-side tr { border-bottom: 1px solid rgba(100,140,200,.08); }
+.hw-attr-table-side tr:last-child { border-bottom: none; }
+.hat-k { color: var(--muted); padding: 3px 8px 3px 0; width: 45%; vertical-align: top; }
+.hat-v { color: var(--text); padding: 3px 0; font-weight: 500; }
+
+[data-theme="light"] .hw-attr-panel { background: rgba(0,0,0,.02); }
+[data-theme="light"] .hw-attr-btn { background: rgba(0,0,0,.04); }
+[data-theme="light"] .hw-attr-btn:hover { background: rgba(0,0,0,.08); }
+
 /* ── Oil-drop fuel station marker ────────────────────────── */
 .fuel-pin {
   width: 14px;
