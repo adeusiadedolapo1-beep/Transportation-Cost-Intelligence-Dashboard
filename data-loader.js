@@ -1333,12 +1333,12 @@ function openPrintWindow(htmlContent) {
 }
 
 function _pdfLogoSrc() {
-  return _pdfLogoBase64 || `${window.location.origin}/public/geoinfotech-logo.gif`;
+  return _pdfLogoBase64 || "./public/geoinfotech-logo.gif";
 }
 
 async function loadPdfLogo() {
   try {
-    const resp = await fetch("./geoinfotech-logo.gif");
+    const resp = await fetch("./public/geoinfotech-logo.gif");
     if (!resp.ok) return;
     const blob = await resp.blob();
     _pdfLogoBase64 = await new Promise((res) => {
