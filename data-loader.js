@@ -110,6 +110,25 @@ let nigeriaGeoJson = null;
 let nigeriaMap;
 let stateLayer;
 let stationLayer;
+let currentTileLayer;
+
+const BASEMAPS = {
+  "carto-dark":     { url: "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png",    options: { maxZoom: 19, subdomains: "abcd" } },
+  "carto-light":    { url: "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",   options: { maxZoom: 19, subdomains: "abcd" } },
+  "carto-voyager":  { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", options: { maxZoom: 19, subdomains: "abcd" } },
+  "osm":            { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",                    options: { maxZoom: 19 } },
+  "esri-satellite": { url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", options: { maxZoom: 19 } },
+};
+
+function switchBasemap(key) {
+  if (!nigeriaMap || !BASEMAPS[key]) return;
+  if (currentTileLayer) currentTileLayer.remove();
+  const bm = BASEMAPS[key];
+  currentTileLayer = L.tileLayer(bm.url, bm.options).addTo(nigeriaMap);
+  if (stateLayer) stateLayer.bringToFront();
+  if (stationLayer) stationLayer.bringToFront();
+  localStorage.setItem("dashBasemap", key);
+}
 
 const $  = (id) => document.getElementById(id);
 const currency = (v, d = 2) => `₦${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
@@ -339,9 +358,9 @@ function renderHikeList() {
 
 /* ── Map ──────────────────────────────────────────────────── */
 async function loadNigeriaBoundaries() {
-  const res = await fetch("./nigeria_states.geojson");
+  const res = await fetch("./public/data/nigeria_states.geojson");
   if (res.ok) return res.json();
-  const r2  = await fetch("./gadm41_NGA_shp.zip");
+  const r2  = await fetch("./public/data/gadm41_NGA_shp.zip");
   if (!r2.ok || typeof shp !== "function") throw new Error("Unable to load Nigeria boundaries");
   const geo    = await shp(await r2.arrayBuffer());
   const layers = Array.isArray(geo) ? geo : [geo];
@@ -366,11 +385,9 @@ function renderMap(geoJson) {
     attributionControl: false,
   });
 
-  /* Google Satellite basemap */
-  L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
-    maxZoom:    20,
-    subdomains: ["mt0", "mt1", "mt2", "mt3"],
-  }).addTo(nigeriaMap);
+  const savedBasemap = localStorage.getItem("dashBasemap") || "carto-dark";
+  const bmCfg = BASEMAPS[savedBasemap] || BASEMAPS["carto-dark"];
+  currentTileLayer = L.tileLayer(bmCfg.url, bmCfg.options).addTo(nigeriaMap);
 
   stateLayer = L.geoJSON(geoJson, {
     style: (feature) => {
@@ -1013,6 +1030,13 @@ function buildStateReportPdfHtml(state, chartImg) {
       </div>
     </div>
 
+    <h2>State Location — Nigeria Map</h2>
+    ${buildNigeriaSvgMap({ highlightA: { name: state, color: "#7c3aed" }, width: 480, height: 290, showLabels: true })}
+    ${_mapLegend([
+      { color: "#7c3aed", label: state + " State" },
+      { color: "#1a3252", label: "Other states" },
+    ])}
+
     <h2>Fuel &amp; Transport Cost (${period})</h2>
     <div class="kpi-row">
       <div class="kpi-box"><span class="kpi-val">${currency(latest?.fuelPrice)}</span><span class="kpi-lbl">PMS Price (₦/L)</span></div>
@@ -1135,6 +1159,14 @@ function buildGeneralReportPdfHtml(chartImg) {
       middle-belt, and the Sudan/Sahel Savannah in the north. Major rivers — the Niger and Benue — converge at
       Lokoja, Kogi State, draining into the Atlantic through the vast Niger Delta.</p>
     </div>
+
+    <h2>Nigeria PMS Price Map (${period})</h2>
+    ${buildNigeriaSvgMap({ colorByPms: true, width: 480, height: 300, showLabels: true })}
+    ${_mapLegend([
+      { color: "#65a30d", label: "Lower PMS price" },
+      { color: "#fbbf24", label: "Mid-range PMS" },
+      { color: "#ef4444", label: "Higher PMS price" },
+    ])}
 
     <h2>Key National Indicators (${period})</h2>
     <div class="kpi-row">
@@ -1373,6 +1405,131 @@ function _pdfFooter() {
   </div>`;
 }
 
+/* ── Nigeria SVG map (PDF reports) ───────────────────────── */
+function buildNigeriaSvgMap({
+  width = 480, height = 310,
+  highlightA = null,   /* { name, color } */
+  highlightB = null,   /* { name, color } */
+  colorByPms = false,
+  showLabels = true,
+  lightTheme = false,  /* white background, labels only on highlighted states */
+} = {}) {
+  if (!nigeriaGeoJson?.features?.length) return "";
+
+  /* collect all coordinates to find bounding box */
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  const eachCoord = (f, cb) => {
+    const g = f.geometry;
+    if (!g) return;
+    const rings = g.type === "MultiPolygon" ? g.coordinates.flat(1) : g.coordinates;
+    rings.forEach(r => r.forEach(cb));
+  };
+  nigeriaGeoJson.features.forEach(f =>
+    eachCoord(f, ([lng, lat]) => {
+      if (lng < x0) x0 = lng; if (lng > x1) x1 = lng;
+      if (lat < y0) y0 = lat; if (lat > y1) y1 = lat;
+    })
+  );
+  if (!isFinite(x0)) return "";
+
+  const pad = 14;
+  const sc  = Math.min((width - pad*2) / (x1-x0), (height - pad*2) / (y1-y0));
+  const dx  = (width  - (x1-x0)*sc) / 2;
+  const dy  = (height - (y1-y0)*sc) / 2;
+  const px  = lng => (dx + (lng-x0)*sc).toFixed(1);
+  const py  = lat => (height - dy - (lat-y0)*sc).toFixed(1);
+
+  const ringPath = r => r.map(([lng, lat], i) => `${i?"L":"M"}${px(lng)},${py(lat)}`).join("") + "Z";
+  const featPath = f => {
+    const g = f.geometry;
+    if (!g) return "";
+    const rings = g.type === "MultiPolygon" ? g.coordinates.flat(1) : g.coordinates;
+    return rings.map(ringPath).join(" ");
+  };
+
+  /* PMS choropleth lookup */
+  const pmsMap = new Map();
+  let pMin = Infinity, pMax = -Infinity;
+  if (colorByPms) {
+    currentRecords().forEach(r => {
+      if (r.fuelPrice > 0) {
+        pmsMap.set(normalize(r.state), r.fuelPrice);
+        if (r.fuelPrice < pMin) pMin = r.fuelPrice;
+        if (r.fuelPrice > pMax) pMax = r.fuelPrice;
+      }
+    });
+  }
+
+  const hlA = highlightA ? normalize(highlightA.name) : null;
+  const hlB = highlightB ? normalize(highlightB.name) : null;
+
+  const centroid = f => {
+    let sx = 0, sy = 0, n = 0;
+    eachCoord(f, ([lng, lat]) => { sx += lng; sy += lat; n++; });
+    return n ? [sx/n, sy/n] : [0, 0];
+  };
+
+  const abbr = name => {
+    if (name === "Federal Capital Territory") return "FCT";
+    const w = name.split(" ");
+    return w.length === 1 ? name.slice(0, 3) : w.map(x => x[0]).join("").toUpperCase();
+  };
+
+  const pathEls = [], labelEls = [];
+
+  nigeriaGeoJson.features.forEach(f => {
+    const name = stateNameFromFeature(f);
+    const norm = normalize(name);
+    const d = featPath(f);
+    if (!d) return;
+
+    const isA = hlA && norm === hlA;
+    const isB = hlB && norm === hlB;
+
+    let fill, stroke, sw;
+    if (lightTheme) {
+      fill   = (isA || isB) ? (isA ? highlightA.color : highlightB.color) : "#dce3ed";
+      stroke = (isA || isB) ? "rgba(50,50,50,.7)" : "rgba(120,140,165,.4)";
+      sw     = (isA || isB) ? "1.8" : ".5";
+    } else {
+      fill   = colorByPms ? colorScale(pmsMap.get(norm), pMin, pMax) : (hlA || hlB ? "#0f1e30" : "#1a3252");
+      stroke = (isA || isB) ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.28)";
+      sw     = (isA || isB) ? "1.5" : ".5";
+    }
+
+    pathEls.push(`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`);
+
+    if (showLabels) {
+      const [cx, cy] = centroid(f);
+      const isHL = isA || isB;
+      if (lightTheme) {
+        const fs = isHL ? 7 : 5.5;
+        const fw = isHL ? "bold" : "normal";
+        labelEls.push(`<text x="${px(cx)}" y="${py(cy)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" fill="#111111" font-family="Arial,sans-serif" font-weight="${fw}">${name}</text>`);
+      } else {
+        labelEls.push(`<text x="${px(cx)}" y="${py(cy)}" text-anchor="middle" dominant-baseline="middle" font-size="${isHL ? 7.5 : 5}" fill="${isHL ? "#fff" : "rgba(255,255,255,.55)"}" font-family="Arial,sans-serif" font-weight="${isHL ? "bold" : "normal"}">${abbr(name)}</text>`);
+      }
+    }
+  });
+
+  const bgColor = lightTheme ? "#ffffff" : "#0a1628";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" style="width:100%;max-height:${height}px;border-radius:6px;display:block;border:1px solid #dde4f0">
+  <rect width="${width}" height="${height}" fill="${bgColor}" rx="5"/>
+  ${pathEls.join("\n  ")}
+  ${labelEls.join("\n  ")}
+</svg>`;
+}
+
+function _mapLegend(items) {
+  return `<div style="display:flex;gap:16px;align-items:center;margin:5px 0 10px;font-size:8pt;flex-wrap:wrap">
+    ${items.map(({ color, label }) =>
+      `<span style="display:flex;align-items:center;gap:5px">
+        <span style="display:inline-block;width:13px;height:13px;border-radius:2px;background:${color};flex-shrink:0"></span>${label}
+      </span>`
+    ).join("")}
+  </div>`;
+}
+
 /* ── Price Hike Tracker PDF ───────────────────────────────── */
 function buildHikeTrackerPdfHtml() {
   const data   = computeAllStateHikes().sort((a, b) => (b.pms ?? -99) - (a.pms ?? -99));
@@ -1507,6 +1664,18 @@ function buildComparePdfHtml(stateA, stateB, pmsImg = "", trnImg = "") {
       </div>
     </div>
 
+    <h2>States on the Map</h2>
+    ${buildNigeriaSvgMap({
+      highlightA: { name: stateA, color: "#7c3aed" },
+      highlightB: { name: stateB, color: "#2563eb" },
+      width: 480, height: 300, showLabels: true, lightTheme: true,
+    })}
+    ${_mapLegend([
+      { color: "#7c3aed", label: stateA },
+      { color: "#2563eb", label: stateB },
+      { color: "#dce3ed", label: "Other states" },
+    ])}
+
     <h2>Fuel &amp; Transport Cost (${latPeriod})</h2>
     <table>
       <thead><tr><th>Indicator</th><th>${stateA}</th><th>${stateB}</th></tr></thead>
@@ -1533,6 +1702,9 @@ function buildComparePdfHtml(stateA, stateB, pmsImg = "", trnImg = "") {
         ${gRow("Fuel Stations per 100,000 people", densA, densB)}
       </tbody>
     </table>
+
+    ${pmsImg ? `<h2>PMS Price Trend</h2><img style="width:100%;max-height:240px;object-fit:contain;border:1px solid #dde4f0;border-radius:5px;margin-bottom:12px;display:block" src="${pmsImg}" alt="PMS comparison chart">` : ""}
+    ${trnImg ? `<h2>Transport Mode Costs</h2><img style="width:100%;max-height:240px;object-fit:contain;border:1px solid #dde4f0;border-radius:5px;margin-bottom:12px;display:block" src="${trnImg}" alt="Transport cost comparison chart">` : ""}
 
     <div class="impact">
       <h3>Effect of Fuel &amp; Transport Cost on Way of Life</h3>
@@ -1561,9 +1733,6 @@ function buildComparePdfHtml(stateA, stateB, pmsImg = "", trnImg = "") {
       Intercity bus fares and motorcycle (Okada) costs represent the primary commuting burden for the majority
       of the working population in both states.</p>
     </div>
-
-    ${pmsImg ? `<h2>PMS Price Comparison Chart</h2><img style="width:100%;max-height:220px;object-fit:contain;border:1px solid #dde4f0;border-radius:5px;margin:6px 0" src="${pmsImg}" alt="PMS comparison chart">` : ""}
-    ${trnImg ? `<h2>Transport Mode Cost Comparison</h2><img style="width:100%;max-height:200px;object-fit:contain;border:1px solid #dde4f0;border-radius:5px;margin:6px 0" src="${trnImg}" alt="Transport cost comparison chart">` : ""}
 
     <div style="font-size:7.5pt;color:#888;margin-top:12px;border-top:1px solid #eee;padding-top:6px;text-align:right">
       Data Source: NBS PMS Price Watch Survey &amp; Transport Cost Survey &nbsp;·&nbsp; Period: ${latPeriod}
@@ -1756,15 +1925,19 @@ function initThemePicker() {
 /* ── Fuel stations map toggle (settings panel) ────────────── */
 function initSettingsPanel() {
   const chk = $("settings-stations-chk");
-  if (!chk) return;
-  chk.addEventListener("change", () => {
-    if (!stationLayer) return;
-    if (chk.checked) {
-      stationLayer.addTo(nigeriaMap);
-    } else {
-      stationLayer.remove();
-    }
-  });
+  if (chk) {
+    chk.addEventListener("change", () => {
+      if (!stationLayer) return;
+      if (chk.checked) stationLayer.addTo(nigeriaMap);
+      else stationLayer.remove();
+    });
+  }
+
+  const basemapSel = $("settings-basemap-sel");
+  if (basemapSel) {
+    basemapSel.value = localStorage.getItem("dashBasemap") || "carto-dark";
+    basemapSel.addEventListener("change", () => switchBasemap(basemapSel.value));
+  }
 }
 
 /* ── General Report nav toggle ────────────────────────────── */
@@ -1929,7 +2102,7 @@ async function initDashboard() {
   }
 
   try {
-    const sr = await fetch("./nigeria_fuel_stations.json");
+    const sr = await fetch("./public/data/nigeria_fuel_stations.json");
     if (sr.ok) {
       const d = await sr.json();
       fuelStations = d.stations || [];

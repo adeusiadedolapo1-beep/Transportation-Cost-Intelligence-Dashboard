@@ -1801,6 +1801,20 @@ svg { display: block; }
   background: #fff;
 }
 
+.settings-select {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  min-width: 160px;
+}
+.settings-select:focus { border-color: var(--blue); }
+[data-theme="light"] .settings-select { background: #fff; color: #1a1a2e; }
+
 /* About box */
 .about-box {
   padding: 14px;
