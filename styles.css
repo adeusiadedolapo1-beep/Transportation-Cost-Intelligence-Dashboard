@@ -172,9 +172,23 @@ svg { display: block; }
   color: #ffffff;
 }
 [data-theme="light"] .national-overview { border-top-color: rgba(255,255,255,.1); }
-[data-theme="light"] .national-overview h2 { color: #88AACC; }
+[data-theme="light"] .national-overview h2 { color: #aac8e8; }
 [data-theme="light"] .nl-label { color: #88AACC; }
 [data-theme="light"] .nl-val { color: #D0E8FC; }
+/* sidebar content needs light text because sidebar bg is dark blue in light mode */
+[data-theme="light"] .nat-kpi-row strong { color: #ffffff; }
+[data-theme="light"] .nat-kpi-label { color: #aac8e8; }
+[data-theme="light"] .nat-badge.up   { color: #6ef0a0; background: rgba(110,240,160,.15); }
+[data-theme="light"] .nat-badge.down { color: #ffb0b0; background: rgba(255,176,176,.15); }
+[data-theme="light"] .nat-footer-date { color: #aac8e8; }
+[data-theme="light"] .period-chip { color: #aac8e8; border-color: rgba(255,255,255,.2); }
+[data-theme="light"] .brand-logo-text { color: #ffffff; }
+/* left panel (white bg) — ensure all stat text is dark */
+[data-theme="light"] .hl-state { color: #1a2a3a; }
+[data-theme="light"] .hl-val   { color: #1a2a3a; }
+[data-theme="light"] .hl-label { color: #4a6080; }
+[data-theme="light"] .kpi-mode-label { color: #4a6080; }
+[data-theme="light"] .kpi-mode-val   { color: #1a2a3a; }
 
 .nav-svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .8; }
 .nav-item.active .nav-svg { opacity: 1; }
@@ -519,6 +533,25 @@ svg { display: block; }
   color: #334 !important;
 }
 
+.leaflet-fit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: rgba(4,18,44,.95);
+  color: #c0d4f0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 5px;
+  padding: 0;
+  transition: background .15s, color .15s;
+}
+.leaflet-fit-btn:hover { background: rgba(0,229,255,.15); color: #fff; }
+[data-theme="light"] .leaflet-fit-btn { background: #fff; color: #334; border-color: #ccc; }
+[data-theme="light"] .leaflet-fit-btn:hover { background: #e8f0fe; }
+
 .map-legend-box {
   position: absolute;
   top: 10px;
@@ -578,25 +611,7 @@ svg { display: block; }
 }
 
 /* Fuel pump legend icon (B&W) */
-.ml-oil-drop {
-  width: 10px;
-  height: 13px;
-  flex-shrink: 0;
-  background: #e5e7eb;
-  border: 1.5px solid #374151;
-  border-radius: 1px 1px 0 0;
-  position: relative;
-}
-.ml-oil-drop::after {
-  content: "";
-  position: absolute;
-  bottom: -3px;
-  left: -1px;
-  width: 12px;
-  height: 2.5px;
-  background: #374151;
-  border-radius: 1px;
-}
+.ml-oil-drop { flex-shrink: 0; }
 
 .map-tooltip {
   border: 1px solid rgba(100,150,220,.22) !important;
@@ -616,10 +631,9 @@ svg { display: block; }
 
 /* ── Oil-drop fuel station marker ────────────────────────── */
 .fuel-pin {
-  width: 9px;
-  height: 11px;
+  width: 14px;
+  height: 18px;
   position: relative;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
 }
 
 .fuel-pin svg {

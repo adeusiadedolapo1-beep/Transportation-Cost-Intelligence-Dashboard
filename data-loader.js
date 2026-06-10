@@ -111,6 +111,8 @@ let nigeriaMap;
 let stateLayer;
 let stationLayer;
 let currentTileLayer;
+let highwayLayer = null;
+let highwaysLoaded = false;
 
 const BASEMAPS = {
   "carto-dark":     { url: "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png",    options: { maxZoom: 19, subdomains: "abcd" } },
@@ -403,6 +405,26 @@ function renderMap(geoJson) {
   }).addTo(nigeriaMap);
 
   nigeriaMap.fitBounds(stateLayer.getBounds(), { padding: [12, 12] });
+
+  /* Fit-to-extent custom control */
+  const FitControl = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd() {
+      const btn = L.DomUtil.create("button", "leaflet-fit-btn");
+      btn.title = "Fit to extent";
+      btn.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+        <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="7" y="7" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+      </svg>`;
+      L.DomEvent.on(btn, "click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (stateLayer) nigeriaMap.fitBounds(stateLayer.getBounds(), { padding: [12, 12] });
+      });
+      return btn;
+    },
+  });
+  new FitControl().addTo(nigeriaMap);
+
   renderFuelStations();
 
   const rdState = $("report-state-sel")?.value;
@@ -441,23 +463,25 @@ function refreshMapColors() {
   if (nigeriaGeoJson && $("nigeria-map").querySelector("svg")) renderSvgMap(nigeriaGeoJson);
 }
 
-/* Fuel pump Leaflet DivIcon — black & white */
+/* Fuel station map-pin icon — red pin with fuel pump inside */
 const FUEL_PUMP_SVG = `
-<svg viewBox="0 0 22 26" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="5" width="12" height="16" rx="1.8" fill="#ffffff" stroke="#1a1a1a" stroke-width="1"/>
-  <rect x="3.5" y="7.5" width="9" height="5" rx="1" fill="#1a1a1a" opacity="0.85"/>
-  <rect x="1" y="20.5" width="14" height="2.5" rx="1" fill="#1a1a1a"/>
-  <path d="M14 10 Q18 10 19 7" stroke="#1a1a1a" stroke-width="2" fill="none" stroke-linecap="round"/>
-  <rect x="16" y="3" width="5.5" height="4.5" rx="1.2" fill="#1a1a1a" transform="rotate(25 18.7 5.2)"/>
+<svg viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 2C11.163 2 4 9.163 4 18c0 11.25 16 30 16 30S36 29.25 36 18C36 9.163 28.837 2 20 2z" fill="#E53935"/>
+  <circle cx="20" cy="18" r="11" fill="#ffffff"/>
+  <rect x="13.5" y="11.5" width="8" height="11" rx="1.2" fill="#8B1A1A"/>
+  <rect x="14.5" y="12.5" width="6" height="3.5" rx="0.6" fill="#ffffff"/>
+  <rect x="13" y="21.5" width="9" height="1.5" rx="0.5" fill="#8B1A1A"/>
+  <path d="M21.5 15.5 Q25 15.5 25.5 13.5" stroke="#8B1A1A" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+  <rect x="23.5" y="11" width="3.5" height="3" rx="0.8" fill="#8B1A1A" transform="rotate(20 25.2 12.5)"/>
 </svg>`;
 
 function makeOilDropIcon() {
   return L.divIcon({
     className: "fuel-pin",
     html: FUEL_PUMP_SVG,
-    iconSize:   [9, 11],
-    iconAnchor: [4, 11],
-    tooltipAnchor: [0, -10],
+    iconSize:   [14, 18],
+    iconAnchor: [7, 18],
+    tooltipAnchor: [0, -18],
   });
 }
 
@@ -475,6 +499,69 @@ function renderFuelStations() {
     marker.addTo(stationLayer);
   });
   stationLayer.addTo(nigeriaMap);
+}
+
+/* ── Nigeria major highways via Overpass API ──────────────── */
+async function loadNigeriaHighways() {
+  if (!nigeriaMap || highwaysLoaded) return;
+  highwaysLoaded = true;
+
+  const query = `[out:json][timeout:90];
+area["ISO3166-1"="NG"][admin_level=2]->.a;
+(way["highway"~"^(motorway|trunk|primary)$"](area.a););
+out geom;`;
+
+  const url = "https://overpass-api.de/api/interpreter";
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      body: "data=" + encodeURIComponent(query),
+    });
+    if (!resp.ok) throw new Error("Overpass request failed");
+    const data = await resp.json();
+
+    const features = data.elements
+      .filter((el) => el.type === "way" && el.geometry)
+      .map((el) => ({
+        type: "Feature",
+        properties: { highway: el.tags?.highway, name: el.tags?.name || "" },
+        geometry: {
+          type: "LineString",
+          coordinates: el.geometry.map((pt) => [pt.lon, pt.lat]),
+        },
+      }));
+
+    const hwColors = { motorway: "#e8b400", trunk: "#e07020", primary: "#c04040" };
+
+    highwayLayer = L.geoJSON({ type: "FeatureCollection", features }, {
+      style: (f) => {
+        const hw = f.properties.highway;
+        return { color: hwColors[hw] || "#cc6600", weight: hw === "motorway" ? 2.5 : hw === "trunk" ? 2 : 1.5, opacity: 0.85 };
+      },
+      onEachFeature: (f, layer) => {
+        if (f.properties.name) layer.bindTooltip(f.properties.name, { sticky: true, className: "map-tooltip" });
+      },
+    }).addTo(nigeriaMap);
+
+    if (stateLayer) stateLayer.bringToFront();
+    if (stationLayer) stationLayer.bringToFront();
+
+    const chk = $("settings-highways-chk");
+    if (chk) chk.checked = true;
+  } catch (err) {
+    console.warn("Highways failed to load:", err);
+    highwaysLoaded = false;
+    const chk = $("settings-highways-chk");
+    if (chk) { chk.disabled = true; chk.parentElement.title = "Failed to load — try again later"; }
+  }
+}
+
+function toggleHighways(show) {
+  if (!nigeriaMap) return;
+  if (show && !highwaysLoaded) { loadNigeriaHighways(); return; }
+  if (!highwayLayer) return;
+  if (show) highwayLayer.addTo(nigeriaMap);
+  else highwayLayer.remove();
 }
 
 /* SVG fallback map */
@@ -683,8 +770,10 @@ function plotStateCharts(state, tab) {
     }));
     Plotly.newPlot("state-transport-chart", traces, {
       ...lay, barmode: "stack", showlegend: true,
+      height: 280,
       yaxis: { ...lay.yaxis, tickprefix: "₦" },
-      margin: { ...lay.margin, b: 60 },
+      legend: { orientation: "h", y: -0.48, x: 0, font: { size: 9 }, bgcolor: "rgba(0,0,0,0)" },
+      margin: { t: 8, r: 10, b: 120, l: 58 },
     }, plotCfg);
 
   } else {
@@ -1161,7 +1250,7 @@ function buildGeneralReportPdfHtml(chartImg) {
     </div>
 
     <h2>Nigeria PMS Price Map (${period})</h2>
-    ${buildNigeriaSvgMap({ colorByPms: true, width: 480, height: 300, showLabels: true })}
+    ${buildNigeriaSvgMap({ colorByPms: true, width: 480, height: 300, showLabels: true, lightTheme: true })}
     ${_mapLegend([
       { color: "#65a30d", label: "Lower PMS price" },
       { color: "#fbbf24", label: "Mid-range PMS" },
@@ -1488,9 +1577,13 @@ function buildNigeriaSvgMap({
 
     let fill, stroke, sw;
     if (lightTheme) {
-      fill   = (isA || isB) ? (isA ? highlightA.color : highlightB.color) : "#dce3ed";
-      stroke = (isA || isB) ? "rgba(50,50,50,.7)" : "rgba(120,140,165,.4)";
-      sw     = (isA || isB) ? "1.8" : ".5";
+      if (isA || isB) {
+        fill   = isA ? highlightA.color : highlightB.color;
+        stroke = "rgba(50,50,50,.7)"; sw = "1.8";
+      } else {
+        fill   = colorByPms ? colorScale(pmsMap.get(norm), pMin, pMax) : "#dce3ed";
+        stroke = "rgba(120,140,165,.4)"; sw = ".5";
+      }
     } else {
       fill   = colorByPms ? colorScale(pmsMap.get(norm), pMin, pMax) : (hlA || hlB ? "#0f1e30" : "#1a3252");
       stroke = (isA || isB) ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.28)";
@@ -1507,7 +1600,10 @@ function buildNigeriaSvgMap({
         const fw = isHL ? "bold" : "normal";
         labelEls.push(`<text x="${px(cx)}" y="${py(cy)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" fill="#111111" font-family="Arial,sans-serif" font-weight="${fw}">${name}</text>`);
       } else {
-        labelEls.push(`<text x="${px(cx)}" y="${py(cy)}" text-anchor="middle" dominant-baseline="middle" font-size="${isHL ? 7.5 : 5}" fill="${isHL ? "#fff" : "rgba(255,255,255,.55)"}" font-family="Arial,sans-serif" font-weight="${isHL ? "bold" : "normal"}">${abbr(name)}</text>`);
+        const fs = isHL ? 7.5 : 5;
+        const fw = isHL ? "bold" : "normal";
+        const fc = isHL ? "#fff" : "rgba(255,255,255,.75)";
+        labelEls.push(`<text x="${px(cx)}" y="${py(cy)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" fill="${fc}" font-family="Arial,sans-serif" font-weight="${fw}">${name}</text>`);
       }
     }
   });
@@ -1937,6 +2033,11 @@ function initSettingsPanel() {
   if (basemapSel) {
     basemapSel.value = localStorage.getItem("dashBasemap") || "carto-dark";
     basemapSel.addEventListener("change", () => switchBasemap(basemapSel.value));
+  }
+
+  const hwChk = $("settings-highways-chk");
+  if (hwChk) {
+    hwChk.addEventListener("change", () => toggleHighways(hwChk.checked));
   }
 }
 
